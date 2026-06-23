@@ -1,0 +1,238 @@
+services:
+  # ===========================================
+  # API GATEWAY
+  # ===========================================
+  api-gateway-php:
+    build:
+      context: ./api-gateway
+      dockerfile: ../docker/php/Dockerfile
+    volumes:
+      - ./api-gateway:/var/www
+    networks:
+      - microservices
+    depends_on:
+      - user-service-php
+      - order-service-php
+      - product-service-php
+
+  api-gateway:
+    image: nginx:alpine
+    ports:
+      - "${API_GATEWAY_PORT:-8080}:80"
+    volumes:
+      - ./api-gateway:/var/www
+      - ./docker/nginx/api-gateway.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - api-gateway-php
+    networks:
+      - microservices
+
+  # ===========================================
+  # USER SERVICE
+  # ===========================================
+  user-service-php:
+    build:
+      context: ./user-service
+      dockerfile: ../docker/php/Dockerfile
+    volumes:
+      - ./user-service:/var/www
+    environment:
+      DB_CONNECTION: pgsql
+      DB_HOST: user-db
+      DB_PORT: 5432
+      DB_DATABASE: ${USER_DB_NAME:-users_db}
+      DB_USERNAME: ${DB_USERNAME:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-secret}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+    depends_on:
+      user-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - microservices
+
+  user-service:
+    image: nginx:alpine
+    ports:
+      - "${USER_SERVICE_PORT:-8001}:80"
+    volumes:
+      - ./user-service:/var/www
+      - ./docker/nginx/user-service.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - user-service-php
+    networks:
+      - microservices
+
+  # ===========================================
+  # ORDER SERVICE
+  # ===========================================
+  order-service-php:
+    build:
+      context: ./order-service
+      dockerfile: ../docker/php/Dockerfile
+    volumes:
+      - ./order-service:/var/www
+    environment:
+      DB_CONNECTION: pgsql
+      DB_HOST: order-db
+      DB_PORT: 5432
+      DB_DATABASE: ${ORDER_DB_NAME:-orders_db}
+      DB_USERNAME: ${DB_USERNAME:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-secret}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      USER_SERVICE_URL: http://user-service:80
+      PRODUCT_SERVICE_URL: http://product-service:80
+    depends_on:
+      order-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - microservices
+
+  order-service:
+    image: nginx:alpine
+    ports:
+      - "${ORDER_SERVICE_PORT:-8002}:80"
+    volumes:
+      - ./order-service:/var/www
+      - ./docker/nginx/order-service.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - order-service-php
+    networks:
+      - microservices
+
+  # ===========================================
+  # PRODUCT SERVICE
+  # ===========================================
+  product-service-php:
+    build:
+      context: ./product-service
+      dockerfile: ../docker/php/Dockerfile
+    volumes:
+      - ./product-service:/var/www
+    environment:
+      DB_CONNECTION: pgsql
+      DB_HOST: product-db
+      DB_PORT: 5432
+      DB_DATABASE: ${PRODUCT_DB_NAME:-products_db}
+      DB_USERNAME: ${DB_USERNAME:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-secret}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+    depends_on:
+      product-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - microservices
+
+  product-service:
+    image: nginx:alpine
+    ports:
+      - "${PRODUCT_SERVICE_PORT:-8003}:80"
+    volumes:
+      - ./product-service:/var/www
+      - ./docker/nginx/product-service.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - product-service-php
+    networks:
+      - microservices
+
+  # ===========================================
+  # DATABASES (PostgreSQL per service)
+  # ===========================================
+  user-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${USER_DB_NAME:-users_db}
+      POSTGRES_USER: ${DB_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-secret}
+    ports:
+      - "${USER_DB_PORT:-5432}:5432"
+    volumes:
+      - user-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - microservices
+
+  order-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${ORDER_DB_NAME:-orders_db}
+      POSTGRES_USER: ${DB_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-secret}
+    ports:
+      - "${ORDER_DB_PORT:-5433}:5432"
+    volumes:
+      - order-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - microservices
+
+  product-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${PRODUCT_DB_NAME:-products_db}
+      POSTGRES_USER: ${DB_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-secret}
+    ports:
+      - "${PRODUCT_DB_PORT:-5434}:5432"
+    volumes:
+      - product-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - microservices
+
+  # ===========================================
+  # MESSAGE BROKER
+  # ===========================================
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MGMT_PORT:-15672}:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_running"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    networks:
+      - microservices
+
+volumes:
+  user-data:
+  order-data:
+  product-data:
+  rabbitmq-data:
+
+networks:
+  microservices:
+    driver: bridge
