@@ -1,25 +1,20 @@
-FROM php:8.3-fpm-alpine
+FROM php:8.3-fpm
 
 # Install system dependencies
-RUN apk add --no-cache \
-    bash \
+RUN apt-get update && apt-get install -y \
+    git \
     curl \
+    libpng-dev \
+    libonig-dev \
+    libxml2-dev \
     libpq-dev \
-    libzip-dev \
+    librdkafka-dev \
     zip \
     unzip \
-    oniguruma-dev
-
-# Install PHP extensions
-RUN docker-php-ext-install \
-    pdo \
-    pdo_pgsql \
-    pgsql \
-    mbstring \
-    zip \
-    bcmath \
-    sockets \
-    pcntl
+    && docker-php-ext-install pdo pdo_pgsql pgsql mbstring exif pcntl bcmath gd \
+    && pecl install rdkafka \
+    && docker-php-ext-enable rdkafka \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Install Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
@@ -27,17 +22,5 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 # Set working directory
 WORKDIR /var/www
 
-# Copy application files
-COPY . /var/www
-
-# Install dependencies (if composer.json exists)
-RUN if [ -f "composer.json" ]; then \
-    composer install --no-dev --optimize-autoloader --no-interaction; \
-    fi
-
 # Set permissions
-RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache 2>/dev/null || true
-
-EXPOSE 9000
-
-CMD ["php-fpm"]
+RUN chown -R www-data:www-data /var/www
