@@ -35,4 +35,11 @@ return [
         ],
     ],
 
+    'user_service' => [
+        'url' => env('USER_SERVICE_URL', 'http://user-nginx:80'),
+    ],
+
+    'product_service' => [
+        'url' => env('PRODUCT_SERVICE_URL', 'http://product-nginx:80'),
+    ],
 ];
